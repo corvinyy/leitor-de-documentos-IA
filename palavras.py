@@ -5,11 +5,7 @@ from spacy.matcher import Matcher
 # Carrega o script
 nlp = spacy.load("pt_core_news_sm")
 
-def extrair_inteligente(caminho_pdf):
-    # Extração do texto
-    doc_pdf = fitz.open(caminho_pdf)
-    texto_bruto = " ".join([pagina.get_text() for pagina in doc_pdf])
-    
+def extrair_inteligente(texto_bruto):
     # Verificação de espaços vazios no PDF
     texto_limpo = " ".join(texto_bruto.split())
     doc_ai = nlp(texto_limpo)
@@ -74,10 +70,49 @@ def extrair_inteligente(caminho_pdf):
 
     return resultados, valores, valores_formatados
 
-# Local do arquivo PDF que será lido
-caminho = r"C:\VSCode\GitHub\IA\teste.pdf"
-info, numeros, formatado = extrair_inteligente(caminho)
+def pdf():
+    # Caminho para o arquivo
+    caminho_pdf = r"C:\VSCode\GitHub\IA\leitor-de-documentos-IA\teste.pdf"
+    doc_pdf = fitz.open(caminho_pdf)
+    
+    # Extração do texto
+    texto_bruto = " ".join([pagina.get_text() for pagina in doc_pdf])
+    
+    # Informações adquiridas
+    info, numeros, formatado = extrair_inteligente(texto_bruto)
+    print(f"Dados encontrados: {info}")
+    print(f"Valores separados: {numeros}")
+    print(f"Valores formatados: {formatado}")
 
-print(f"Dados encontrados: {info}")
-print(f"Valores separados: {numeros}")
-print(f"Valores formatados: {formatado}")
+def docs():
+    import requests
+    
+    # Requisição do documento
+    doc = input("Insira o código da seu arquivo: ")
+    url = f"https://docs.google.com/document/d/{doc}/export?format=txt"
+    response = requests.get(url)
+    
+    # Verificação do documento
+    if response.status_code == 200:
+        texto_bruto = response.content.decode("utf-8")
+        info, numeros, formatado = extrair_inteligente(texto_bruto)
+        print(f"Dados encontrados: {info}")
+        print(f"Valores separados: {numeros}")
+        print(f"Valores formatados: {formatado}")
+
+    else:
+        print(f"Erro ao acessar o documento. Status {response.status_code}")
+    
+# Opções para analisar diferentes documentos
+opcao = input("""Qual modo deseja utilizar: 
+[1] - Arquivo PDF
+[2] - Google DOCS
+""")
+
+if opcao == "1":
+    pdf()
+elif opcao == "2":
+    docs()
+else:
+    print("Opção inválida")
+    
