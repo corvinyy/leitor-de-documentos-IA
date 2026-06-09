@@ -3,40 +3,50 @@ from google.genai import types
 from pydantic import BaseModel
 import json
 
-def plan_goal():
-    plan_prompt = "Analise o seguinte texto e retire deles os valores. Classifique-os em Positivos se possuírem valores positivos ou Negativos caso possuam valores negativos"
-    plans = callmodel(plan_prompt, list[PlanSteps])
-    plans = json.loads(plans)
-    steps = [ plan['step_name'].strip() for plan in plans if plan['step_name'].strip()]
-    return steps
-    
-class PlanSteps(BaseModel):
-    step_name: str
-    
-def callmodel(prompt, schema):
-    response = chat.send_message(prompt, config=types.GenerateContentConfig(response_schema=schema, 
-                                                                 response_mime_type="application/json", 
-                                                                 system_instruction="Answer within 30 words"))
-    
-    return response.text
+# Estrutura dos valores que serão adquiridos
+class AnaliseValores(BaseModel):
+    valores_positivos: list[str]
+    valores_negativos: list[str]
 
-def run_agent():
-    steps = plan_goal()
-    for step in steps:
-        print(step)
-    print("\nPasso completo!")
+def analisar_documento_em_uma_chamada(caminho_pdf):
+    # Inicializalização do cliente 
+    client = genai.Client(api_key="") 
     
+    # Envio dos arquivos ao cliente
+    arquivo = client.files.upload(file=caminho_pdf) 
+    
+    # Prompt que é enviado ao Gemini
+    objetivo = (
+        "Analise o seguinte PDF e retire deles os valores. "
+        "Classifique-os em Positivos se possuírem valores positivos ou Negativos caso possuam valores negativos."
+    )
+    
+    # Chamada que envia o arquivo (teste.pdf), objetivo (separar os valores) e o formato JSON 
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[arquivo, objetivo],
+        config=types.GenerateContentConfig(
+            response_schema=AnaliseValores,
+            response_mime_type="application/json",
+            system_instruction="Seja preciso e extraia os valores textuais ou numéricos conforme solicitado."
+        )
+    )
+    
+    # Converte o JSON em Python para mais fácil visualização
+    dados_estruturados = json.loads(response.text)
+    return dados_estruturados
+
 if __name__ == "__main__":
-    client = genai.Client(api_key="") # Insira sua chave da API aqui
+    # Local do arquivo PDF que será lido
+    caminhopdf = r"C:\VSCode\GitHub\IA\leitor-de-documentos-\teste.pdf" 
     
-    # Informações para o uso da IA (modelo, obejtivo, caminho do documento)
-    caminhopdf = r"C:\VSCode\GitHub\IA\teste.pdf" 
-    arquivo = client.files.upload(file=caminhopdf) 
-    model = "gemini-2.5-flash"
-    chat = client.chats.create(model=model)
-    objetivo = "Analise o seguinte texto e retire deles os valores. Classifique-os em Positivos se possuírem valores positivos ou Negativos caso possuam valores negativos"
-    print(f"Objetivo: {objetivo}")
+    resultado = analisar_documento_em_uma_chamada(caminhopdf)
     
-    # Envio da mensagem a IA
-    chat.send_message([arquivo, objetivo])
-    run_agent()
+    # Exibe os resultados na tela de forma organizada
+    print("\nVALORES POSITIVOS")
+    for item in resultado["valores_positivos"]:
+        print(f"+ {item}")
+        
+    print("\nVALORES NEGATIVOS")
+    for item in resultado["valores_negativos"]:
+        print(f"- {item}")
