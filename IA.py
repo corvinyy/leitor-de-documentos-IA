@@ -2,13 +2,24 @@ from google import genai
 from google.genai import types  
 from pydantic import BaseModel
 import json
+import os
+import matplotlib.pyplot as plt
+from fpdf import FPDF
+
+# Lógica da IA--------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Estrutura dos valores que serão adquiridos
 class AnaliseValores(BaseModel):
-    valores_positivos: list[str]
-    valores_negativos: list[str]
+    rotulo: str
+    valor: float
+    tipo: str
 
-def analisar_documento_em_uma_chamada(caminho_pdf):
+class AnaliseCronologica(BaseModel):
+    historico: list[AnaliseValores]
+    resumo: str
+    estilo: str
+
+def analise(caminho_pdf):
     # Inicializalização do cliente 
     client = genai.Client(api_key="") 
     
@@ -17,36 +28,103 @@ def analisar_documento_em_uma_chamada(caminho_pdf):
     
     # Prompt que é enviado ao Gemini
     objetivo = (
-        "Analise o seguinte PDF e retire deles os valores. "
-        "Classifique-os em Positivos se possuírem valores positivos ou Negativos caso possuam valores negativos."
-    )
+    "Analise o documento e extraia os dados principais de variação ou distribuição."
+    "Para cada dado encontrado, preencha a estrutura:"
+    "- 'rotulo': Identifique o nome da categoria, produto ou mês correspondente (ex: 'Abril', 'Filmes', 'Roupas')."
+    "- 'valor': Identifique o valor numérico ou percentual. Se o texto indicar uma 'queda' ou prejuízo, salve como NEGATIVO. Se indicar 'aumento' ou ganho, positivo."
+    "- 'tipo': Descreva brevemente o tipo do dado."
+    "No campo 'resumo', faça uma síntese dos dados analisados."
+    "No campo 'estilo', defina se será melhor um gráfico de 'pizza' ou 'barras':"
+    "- Escolha 'barras' se os dados mostrarem uma evolução no tempo (meses/anos) ou contiverem valores negativos."
+    "- Escolha 'pizza' se os dados representarem a divisão/distribuição de categorias de um todo (composição) e forem todos positivos.")
     
-    # Chamada que envia o arquivo (teste.pdf), objetivo (separar os valores) e o formato JSON 
+    # Chamada que envia o arquivo (teste.pdf) e objetivo (separar os valores)
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         contents=[arquivo, objetivo],
         config=types.GenerateContentConfig(
-            response_schema=AnaliseValores,
+            response_schema=AnaliseCronologica,
             response_mime_type="application/json",
             system_instruction="Seja preciso e extraia os valores textuais ou numéricos conforme solicitado."
         )
     )
     
     # Converte o JSON em Python para mais fácil visualização
-    dados_estruturados = json.loads(response.text)
-    return dados_estruturados
+    return response.parsed
+ 
+# Funções para geração de gráficos--------------------------------------------------------------------------------------------------------------------------------------------------
+ 
+def grafico_barras(dados, caminho_saida="Grafico_Final.png"):
+    historico = dados.historico
+    
+    meses = [ponto.rotulo.capitalize() for ponto in historico]
+    valores = [ponto.valor for ponto in historico]
+    
+    plt.figure(figsize=(8,5), layout="constrained")
+    
+    cores = ["limegreen" if val >= 0 else "indianred" for val in valores]
+    
+    barras = plt.bar(meses, valores, linestyle="-", color=cores, edgecolor="black", label="Variação %")
+    
+    plt.axhline(0, color="gray", linestyle="--", linewidth=0.8)
+    
+    for barra in barras:
+        val = barra.get_height()
+        
+        pos_y = val + (max(valores) * 0.02 if val >= 0 else min(valores) * 0.02)
+        
+        plt.text(barra.get_x() + barra.get_width() / 2, pos_y, f"{val}%", ha="center", va="bottom" if val >= 0 else "top", fontsize=9, fontweight="bold")
+            
+    #plt.scatter(meses[i], val, color=cor, zorder=5) 
+   
+    plt.title('Evolução das Variações Percentuais no Tempo', fontsize=12, fontweight='bold')
+    plt.xlabel('Meses', fontsize=10)
+    plt.ylabel('Variação (%)', fontsize=10)
+    plt.grid(True, linestyle=':', alpha=0.6)
 
+    # Define os limites do eixo Y para dar folga para os textos
+    margem = (max(valores) - min(valores)) * 0.2 if valores else 15
+    plt.ylim(min(valores) - margem, max(valores) + margem)
+    
+    plt.savefig(caminho_saida)
+    plt.show()
+    plt.close()
+    return caminho_saida
+
+def grafico_pizza(dados, caminho_saida="Grafico_Pizza.png"):
+    historico = dados.historico
+    
+    nomes = [ponto.rotulo.capitalize() for ponto in historico]
+    valores = [ponto.valor for ponto in historico]
+
+    valores_pos = [abs(v) for v in valores]
+
+    plt.figure(figsize=(6,6))
+
+    plt.pie(valores_pos, labels=nomes, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+
+    plt.title("Distribuição Proporcional por Período", fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    plt.savefig(caminho_saida)
+    plt.show()
+    plt.close()
+    return caminho_saida
+
+# Criação de PDFs--------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Método inicial--------------------------------------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     # Local do arquivo PDF que será lido
-    caminhopdf = r"C:\VSCode\GitHub\IA\leitor-de-documentos-\teste.pdf" 
+    caminhopdf = r"C:\VSCode\GitHub\IA\leitor-de-documentos-ia\teste_pizza.pdf" 
     
-    resultado = analisar_documento_em_uma_chamada(caminhopdf)
+    resultado = analise(caminhopdf)
     
-    # Exibe os resultados na tela de forma organizada
-    print("\nVALORES POSITIVOS")
-    for item in resultado["valores_positivos"]:
-        print(f"+ {item}")
+    estilo_escolhido = resultado.estilo.lower()
+    print(estilo_escolhido)
+    
+    if "pizza" in estilo_escolhido:
+        grafico_pizza(resultado)
         
-    print("\nVALORES NEGATIVOS")
-    for item in resultado["valores_negativos"]:
-        print(f"- {item}")
+    else:
+        grafico_barras(resultado)
