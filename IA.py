@@ -28,32 +28,33 @@ def analise(caminho_pdf):
     
     # Prompt que é enviado ao Gemini
     objetivo = (
-    "Analise o documento e extraia os dados principais de variação ou distribuição."
-    "Para cada dado encontrado, preencha a estrutura:"
-    "- 'rotulo': Identifique o nome da categoria, produto ou mês correspondente (ex: 'Abril', 'Filmes', 'Roupas')."
-    "- 'valor': Identifique o valor numérico ou percentual. Se o texto indicar uma 'queda' ou prejuízo, salve como NEGATIVO. Se indicar 'aumento' ou ganho, positivo."
-    "- 'tipo': Descreva brevemente o tipo do dado."
-    "No campo 'resumo', faça uma síntese dos dados analisados."
-    "No campo 'estilo', defina se será melhor um gráfico de 'pizza' ou 'barras':"
-    "- Escolha 'barras' se os dados mostrarem uma evolução no tempo (meses/anos) ou contiverem valores negativos."
-    "- Escolha 'pizza' se os dados representarem a divisão/distribuição de categorias de um todo (composição) e forem todos positivos.")
+        "Analise o documento e extraia os dados principais de variação ou distribuição."
+        "Para cada dado encontrado, preencha a estrutura:"
+        "- 'rotulo': Identifique o nome da categoria, produto ou mês correspondente (ex: 'Abril', 'Filmes', 'Roupas')."
+        "- 'valor': Identifique o valor numérico ou percentual. Se o texto indicar uma 'queda' ou prejuízo, salve como NEGATIVO. Se indicar 'aumento' ou ganho, POSITIVO."
+        "- 'tipo': Descreva brevemente o tipo do dado."
+        "No campo 'resumo', faça uma síntese dos dados analisados."
+        "No campo 'estilo', defina se será melhor um gráfico de 'pizza' ou 'barras':"
+        "- Escolha 'barras' se os dados mostrarem uma evolução no tempo (meses/anos) ou contiverem valores negativos."
+        "- Escolha 'pizza' se os dados representarem a divisão/distribuição de categorias de um todo (composição) e forem todos positivos."
+    )
     
     # Chamada que envia o arquivo (teste.pdf) e objetivo (separar os valores)
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=[arquivo, objetivo],
-        config=types.GenerateContentConfig(
-            response_schema=AnaliseCronologica,
-            response_mime_type="application/json",
-            system_instruction="Seja preciso e extraia os valores textuais ou numéricos conforme solicitado."
+        model = "gemini-2.5-flash",
+        contents = [arquivo, objetivo],
+        config = types.GenerateContentConfig(
+            response_schema = AnaliseCronologica,
+            response_mime_type = "application/json",
+            system_instruction = "Seja preciso e extraia os valores textuais ou numéricos conforme solicitado."
         )
     )
     
     # Converte o JSON em Python para mais fácil visualização
     return response.parsed
- 
+
 # Funções para geração de gráficos--------------------------------------------------------------------------------------------------------------------------------------------------
- 
+
 def grafico_barras(dados, caminho_saida="Grafico_Final.png"):
     historico = dados.historico
     
@@ -76,7 +77,7 @@ def grafico_barras(dados, caminho_saida="Grafico_Final.png"):
         plt.text(barra.get_x() + barra.get_width() / 2, pos_y, f"{val}%", ha="center", va="bottom" if val >= 0 else "top", fontsize=9, fontweight="bold")
             
     #plt.scatter(meses[i], val, color=cor, zorder=5) 
-   
+
     plt.title('Evolução das Variações Percentuais no Tempo', fontsize=12, fontweight='bold')
     plt.xlabel('Meses', fontsize=10)
     plt.ylabel('Variação (%)', fontsize=10)
@@ -101,7 +102,7 @@ def grafico_pizza(dados, caminho_saida="Grafico_Pizza.png"):
 
     plt.figure(figsize=(6,6))
 
-    plt.pie(valores_pos, labels=nomes, autopct='%1.1f%%', startangle=140, colors=plt.cm.Paired.colors)
+    plt.pie(valores_pos, labels=nomes, autopct='%1.1f%%', startangle=140, wedgeprops={'edgecolor': 'black', 'linewidth': 2}, colors=plt.cm.Set1.colors)
 
     plt.title("Distribuição Proporcional por Período", fontsize=12, fontweight='bold')
     
@@ -112,7 +113,86 @@ def grafico_pizza(dados, caminho_saida="Grafico_Pizza.png"):
     return caminho_saida
 
 # Criação de PDFs--------------------------------------------------------------------------------------------------------------------------------------------------
+class RelatorioPDF(FPDF):
+    def header(self):
+        self.set_fill_color(10, 45, 80)
 
+        self.rect(0, 0, 210, 25, "F")
+        self.set_text_color(255, 255, 255)
+
+        self.set_font("Arial", "B", 22)
+        self.cell(0, 15, "RELATÓRIO DE PERFORMANCE", ln=True, align="C")
+
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+
+        self.set_font("Arial", "", 8)
+        self.set_text_color(100,100,100)
+
+        self.cell(0, 10, f"Pagina {self.page_no()}", align="C")
+        
+def gerar_pdf(dados, grafico_path):
+    pdf = RelatorioPDF()
+    pdf.add_page()
+
+    pdf.set_text_color(0,0,0)
+
+    # Título da análise
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Resumo Executivo", ln=True)
+
+    pdf.ln(3)
+
+    # Resumo gerado pelo Gemini
+    pdf.set_font("Arial", "", 11)
+
+    pdf.multi_cell(0,6,dados.resumo)
+
+    pdf.ln(5)
+
+    # Inserção do gráfico
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, "Indicadores", ln=True)
+
+    pdf.image(grafico_path, x=30, w=150)
+
+    pdf.ln(100)
+
+    altura_cabecalho = 10
+    altura_linha = 10
+
+    altura_tabela = altura_cabecalho + (len(dados.historico) * altura_linha)
+
+    espaco_restante = pdf.h - pdf.get_y() - pdf.b_margin
+
+    if altura_tabela > espaco_restante:
+        pdf.add_page()
+
+    # Tabela de dados
+    pdf.set_font("Arial", "B", 12)
+
+    if dados.estilo == "barras":
+        pdf.cell(70, 10, "Rotulo", 1)
+        pdf.cell(50, 10, "Valor", 1)
+        pdf.cell(70, 10, "Tipo", 1)
+        pdf.ln()
+
+        pdf.set_font("Arial", "", 11)
+
+        for item in dados.historico:
+            pdf.cell(70, 10, item.rotulo, 1)
+            pdf.cell(50, 10, f"{str(item.valor)}%", 1)
+            pdf.cell(70, 10, item.tipo, 1)
+
+            pdf.ln()
+
+    else:
+        pdf.output("Relatorio_Final.pdf")
+
+    print("PDF criado com sucesso!")   
+    
 # Método inicial--------------------------------------------------------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     # Local do arquivo PDF que será lido
@@ -124,7 +204,9 @@ if __name__ == "__main__":
     print(estilo_escolhido)
     
     if "pizza" in estilo_escolhido:
-        grafico_pizza(resultado)
+        grafico = grafico_pizza(resultado)
         
     else:
-        grafico_barras(resultado)
+        grafico = grafico_barras(resultado)
+        
+    gerar_pdf(resultado, grafico)
